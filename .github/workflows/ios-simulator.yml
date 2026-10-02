@@ -1,0 +1,77 @@
+name: iOS Simulator
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: turnopronto-ios-simulator
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Flutter stable
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate iOS project
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter create             --platforms=ios             --project-name turnopronto_ios             --org br.com.turnopronto             .
+          flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Verify API
+        run: |
+          curl --fail --silent --show-error --max-time 20             https://turnopronto1.websiteseguro.com/api/v1/health
+
+      - name: Build iOS Simulator
+        run: |
+          flutter build ios             --simulator             --debug             --dart-define=API_URL=https://turnopronto1.websiteseguro.com/api/v1
+
+      - name: Package Simulator app
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d build/ios/iphonesimulator/Runner.app
+          ditto -c -k --sequesterRsrc --keepParent             build/ios/iphonesimulator/Runner.app             build/TurnoPronto-iOS-Simulator.zip
+          shasum -a 256 build/TurnoPronto-iOS-Simulator.zip             | tee build/TurnoPronto-iOS-Simulator.sha256
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TurnoPronto-iOS-Simulator
+          path: |
+            build/TurnoPronto-iOS-Simulator.zip
+            build/TurnoPronto-iOS-Simulator.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish latest test release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release delete ios-test-latest --cleanup-tag -y || true
+          gh release create ios-test-latest             --target "${GITHUB_SHA}"             --title "TurnoPronto iOS - Simulator Test"             --notes "Build automático para iOS Simulator. Para iPhone físico, abra o projeto no Xcode e configure Signing & Capabilities."             --prerelease             build/TurnoPronto-iOS-Simulator.zip             build/TurnoPronto-iOS-Simulator.sha256
