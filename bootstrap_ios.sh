@@ -21,7 +21,7 @@ echo "==> Dependências"
 flutter pub get
 
 echo "==> Verificação da API HTTPS"
-curl --fail --silent --show-error --max-time 20   https://turnopronto1.websiteseguro.com/api/v1/health >/dev/null
+curl --fail --silent --show-error --max-time 20   https://turnopronto.com.br/api/v1/health >/dev/null
 
 echo "==> Pronto."
 echo "Simulator: flutter run -d ios"
