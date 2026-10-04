@@ -56,16 +56,12 @@ Para teste pessoal, o Xcode pode assinar automaticamente usando seu Apple ID/Tea
 A URL de teste padrão é:
 
 ```text
-https://turnopronto1.websiteseguro.com/api/v1
+https://turnopronto.com.br/api/v1
 ```
 
 Ela é HTTPS e compatível com o App Transport Security do iOS.
 
-Para trocar no build:
-
-```bash
-flutter run -d ios --dart-define=API_URL=https://exemplo/api/v1
-```
+A URL da API é fixa no aplicativo e não é configurável pelo usuário nem por parâmetro de build.
 
 ## 4. Assinatura
 
