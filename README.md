@@ -7,7 +7,7 @@ Este repositório é **exclusivo para iOS** e não deve conter artefatos Android
 ## Estado
 
 - Flutter
-- API padrão: `https://turnopronto1.websiteseguro.com/api/v1`
+- API fixa: `https://turnopronto.com.br/api/v1`
 - Build de teste para iOS Simulator via GitHub Actions
 - Preparado para execução no Mac/Xcode
 - Preparado para assinatura posterior em iPhone/TestFlight
