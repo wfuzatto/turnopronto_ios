@@ -1,6 +1,6 @@
 # TurnoPronto iOS
 
-Aplicativo Flutter para iPhone do TurnoPronto. O desenvolvimento acontece no GitHub; o Mac é usado apenas para compilar e instalar pelo Xcode.
+Aplicativo Flutter para iPhone do TurnoPronto. A pasta `lib/`, as dependências Flutter e a identidade visual foram sincronizadas com o Android (`wfuzatto/turnopronto_app`, versão 0.4.0). O desenvolvimento acontece no GitHub; o Mac é usado apenas para compilar e instalar pelo Xcode.
 
 - API: `https://turnopronto.com.br/api/v1`
 - Backend compartilhado: `wfuzatto/turnopronto_web`
@@ -51,4 +51,4 @@ Nunca adicione certificados, perfis, arquivos `.p12`, chaves de assinatura ou se
 
 ## Estado da versão
 
-Esta preparação permite o fluxo de compilação e instalação local. A validação final do build no iPhone deve ser feita no Mac com o Xcode; não há IPA assinado gerado por este repositório.
+- Código Flutter sincronizado com o Android em 15/10/2026; incluem-se vagas públicas antes do login, fluxo de autenticação sob demanda, geolocalização e logo SVG.\n- A permissão de localização é configurada no `Info.plist` pelo script do Mac.\n- As funcionalidades dependem de compatibilidade da API com o backend publicado.\n- Ainda é necessário validar execução real no Xcode e corrigir eventuais diferenças de renderização iOS.\n\nEsta preparação permite o fluxo de compilação e instalação local. A validação final do build no iPhone deve ser feita no Mac com o Xcode; não há IPA assinado gerado por este repositório.
