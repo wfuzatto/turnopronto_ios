@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 
@@ -21,6 +22,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final phone = TextEditingController();
   final email = TextEditingController();
   final cpf = TextEditingController();
+  final rg = TextEditingController();
   final birthDate = TextEditingController();
   final headline = TextEditingController();
   final cnpj = TextEditingController();
@@ -37,11 +39,41 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final password = TextEditingController();
   final passwordConfirm = TextEditingController();
 
+  final Map<String, FocusNode> _focus = {
+    'name': FocusNode(),
+    'phone': FocusNode(),
+    'email': FocusNode(),
+    'cpf': FocusNode(),
+    'rg': FocusNode(),
+    'birthDate': FocusNode(),
+    'headline': FocusNode(),
+    'cnpj': FocusNode(),
+    'responsibleCpf': FocusNode(),
+    'legalName': FocusNode(),
+    'tradeName': FocusNode(),
+    'postalCode': FocusNode(),
+    'address': FocusNode(),
+    'city': FocusNode(),
+    'state': FocusNode(),
+    'pixKey': FocusNode(),
+    'pixHolderName': FocusNode(),
+    'pixHolderDocument': FocusNode(),
+    'password': FocusNode(),
+    'passwordConfirm': FocusNode(),
+  };
+
+  final _categoriesKey = GlobalKey();
+  final _termsKey = GlobalKey();
+  final _privacyKey = GlobalKey();
+  final _whatsappKey = GlobalKey();
+
   String role = 'professional';
   String pixType = 'cpf';
   bool termsAccepted = false;
   bool privacyAccepted = false;
   bool whatsappConsent = false;
+  bool passwordVisible = false;
+  bool passwordConfirmVisible = false;
   bool loading = false;
   String? error;
 
@@ -70,6 +102,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       phone,
       email,
       cpf,
+      rg,
       birthDate,
       headline,
       cnpj,
@@ -87,6 +120,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       passwordConfirm,
     ]) {
       controller.dispose();
+    }
+    for (final node in _focus.values) {
+      node.dispose();
     }
     super.dispose();
   }
@@ -112,6 +148,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       'whatsapp_consent': whatsappConsent,
       if (role == 'professional') ...{
         'cpf': cpf.text.trim(),
+        'rg': rg.text.trim(),
         'birth_date': birthDate.text.trim(),
         'headline': headline.text.trim(),
         'categories': selectedCategories.toList(),
@@ -124,18 +161,301 @@ class _RegisterScreenState extends State<RegisterScreen> {
     };
   }
 
+  String _digits(String value) => value.replaceAll(RegExp(r'\D'), '');
+
+  bool _validEmail(String value) =>
+      RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value.trim());
+
+  bool _validCpf(String value) {
+    final d = _digits(value);
+    if (d.length != 11 || RegExp(r'^(\d)\1{10}$').hasMatch(d)) return false;
+    for (var t = 9; t < 11; t++) {
+      var sum = 0;
+      for (var i = 0; i < t; i++) {
+        sum += int.parse(d[i]) * ((t + 1) - i);
+      }
+      final digit = ((10 * sum) % 11) % 10;
+      if (int.parse(d[t]) != digit) return false;
+    }
+    return true;
+  }
+
+  bool _validCnpj(String value) {
+    final d = _digits(value);
+    if (d.length != 14 || RegExp(r'^(\d)\1{13}$').hasMatch(d)) return false;
+
+    int calc(String base, List<int> weights) {
+      var sum = 0;
+      for (var i = 0; i < weights.length; i++) {
+        sum += int.parse(base[i]) * weights[i];
+      }
+      final rest = sum % 11;
+      return rest < 2 ? 0 : 11 - rest;
+    }
+
+    final d1 = calc(d, const [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+    if (int.parse(d[12]) != d1) return false;
+    final d2 = calc(d, const [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+    return int.parse(d[13]) == d2;
+  }
+
+  void _validationError(
+    String message, {
+    FocusNode? focusNode,
+    GlobalKey? targetKey,
+  }) {
+    setState(() => error = message);
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      focusNode?.requestFocus();
+      final targetContext = targetKey?.currentContext;
+      if (targetContext != null) {
+        Scrollable.ensureVisible(
+          targetContext,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOut,
+          alignment: 0.2,
+        );
+      }
+    });
+  }
+
+  bool _validateBeforeSubmit() {
+    if (name.text.trim().length < 3) {
+      _validationError(
+        role == 'professional'
+            ? 'Informe seu nome completo.'
+            : 'Informe o nome completo do responsável.',
+        focusNode: _focus['name'],
+      );
+      return false;
+    }
+
+    final phoneDigits = _digits(phone.text);
+    if (phoneDigits.length != 10 && phoneDigits.length != 11) {
+      _validationError(
+        'Informe um WhatsApp válido com DDD.',
+        focusNode: _focus['phone'],
+      );
+      return false;
+    }
+
+    if (!_validEmail(email.text)) {
+      _validationError('Informe um e-mail válido.', focusNode: _focus['email']);
+      return false;
+    }
+
+    if (role == 'professional') {
+      if (!_validCpf(cpf.text)) {
+        _validationError('CPF inválido.', focusNode: _focus['cpf']);
+        return false;
+      }
+      if (birthDate.text.trim().isEmpty) {
+        _validationError(
+          'Informe sua data de nascimento.',
+          focusNode: _focus['birthDate'],
+        );
+        return false;
+      }
+      if (selectedCategories.isEmpty) {
+        _validationError(
+          'Selecione pelo menos uma função de interesse.',
+          targetKey: _categoriesKey,
+        );
+        return false;
+      }
+    } else {
+      if (!_validCpf(responsibleCpf.text)) {
+        _validationError(
+          'CPF do responsável inválido.',
+          focusNode: _focus['responsibleCpf'],
+        );
+        return false;
+      }
+      if (!_validCnpj(cnpj.text)) {
+        _validationError('CNPJ inválido.', focusNode: _focus['cnpj']);
+        return false;
+      }
+      if (legalName.text.trim().isEmpty) {
+        _validationError(
+          'Informe a razão social.',
+          focusNode: _focus['legalName'],
+        );
+        return false;
+      }
+      if (tradeName.text.trim().isEmpty) {
+        _validationError(
+          'Informe o nome fantasia.',
+          focusNode: _focus['tradeName'],
+        );
+        return false;
+      }
+    }
+
+    if (role != 'professional') {
+      if (_digits(postalCode.text).length != 8) {
+        _validationError('Informe um CEP válido.', focusNode: _focus['postalCode']);
+        return false;
+      }
+      if (address.text.trim().isEmpty) {
+        _validationError('Informe o endereço.', focusNode: _focus['address']);
+        return false;
+      }
+      if (city.text.trim().isEmpty) {
+        _validationError('Informe a cidade.', focusNode: _focus['city']);
+        return false;
+      }
+      if (!RegExp(r'^[A-Za-z]{2}$').hasMatch(state.text.trim())) {
+        _validationError('Informe a UF com 2 letras.', focusNode: _focus['state']);
+        return false;
+      }
+
+      if (pixKey.text.trim().isEmpty) {
+        _validationError('Informe a chave Pix.', focusNode: _focus['pixKey']);
+        return false;
+      }
+      if (pixType == 'cpf' && !_validCpf(pixKey.text)) {
+        _validationError('A chave Pix CPF é inválida.', focusNode: _focus['pixKey']);
+        return false;
+      }
+      if (pixType == 'cnpj' && !_validCnpj(pixKey.text)) {
+        _validationError('A chave Pix CNPJ é inválida.', focusNode: _focus['pixKey']);
+        return false;
+      }
+      if (pixType == 'email' && !_validEmail(pixKey.text)) {
+        _validationError(
+          'A chave Pix de e-mail é inválida.',
+          focusNode: _focus['pixKey'],
+        );
+        return false;
+      }
+      if (pixType == 'phone') {
+        final pixPhoneDigits = _digits(pixKey.text);
+        if (pixPhoneDigits.length != 10 && pixPhoneDigits.length != 11) {
+          _validationError(
+            'A chave Pix de telefone é inválida.',
+            focusNode: _focus['pixKey'],
+          );
+          return false;
+        }
+      }
+
+      if (pixHolderName.text.trim().length < 3) {
+        _validationError(
+          'Informe o nome do titular da conta Pix.',
+          focusNode: _focus['pixHolderName'],
+        );
+        return false;
+      }
+
+      final holderDigits = _digits(pixHolderDocument.text);
+      if (holderDigits.length == 11) {
+        if (!_validCpf(holderDigits)) {
+          _validationError(
+            'CPF do titular do Pix inválido.',
+            focusNode: _focus['pixHolderDocument'],
+          );
+          return false;
+        }
+      } else if (holderDigits.length == 14) {
+        if (!_validCnpj(holderDigits)) {
+          _validationError(
+            'CNPJ do titular do Pix inválido.',
+            focusNode: _focus['pixHolderDocument'],
+          );
+          return false;
+        }
+      } else {
+        _validationError(
+          'Informe o CPF ou CNPJ do titular do Pix.',
+          focusNode: _focus['pixHolderDocument'],
+        );
+        return false;
+      }
+
+    }
+
+    if (password.text.length < 8) {
+      _validationError(
+        'A senha deve ter pelo menos 8 caracteres.',
+        focusNode: _focus['password'],
+      );
+      return false;
+    }
+    if (passwordConfirm.text.isEmpty) {
+      _validationError(
+        'Confirme a senha digitada.',
+        focusNode: _focus['passwordConfirm'],
+      );
+      return false;
+    }
+    if (password.text != passwordConfirm.text) {
+      _validationError(
+        'As senhas não coincidem.',
+        focusNode: _focus['passwordConfirm'],
+      );
+      return false;
+    }
+
+    if (!termsAccepted) {
+      _validationError(
+        'Aceite os Termos de Uso para continuar.',
+        targetKey: _termsKey,
+      );
+      return false;
+    }
+    if (!privacyAccepted) {
+      _validationError(
+        'Aceite a Política de Privacidade para continuar.',
+        targetKey: _privacyKey,
+      );
+      return false;
+    }
+    if (!whatsappConsent) {
+      _validationError(
+        'Autorize as mensagens transacionais no WhatsApp para continuar.',
+        targetKey: _whatsappKey,
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  List<TextInputFormatter>? _pixKeyFormatters() {
+    switch (pixType) {
+      case 'cpf':
+        return [const _DigitsMaskFormatter('###.###.###-##', 11)];
+      case 'cnpj':
+        return [const _DigitsMaskFormatter('##.###.###/####-##', 14)];
+      case 'phone':
+        return [const _DigitsMaskFormatter('(##) #####-####', 11)];
+      default:
+        return null;
+    }
+  }
+
+  TextInputType _pixKeyKeyboardType() {
+    switch (pixType) {
+      case 'cpf':
+      case 'cnpj':
+      case 'phone':
+        return TextInputType.number;
+      case 'email':
+        return TextInputType.emailAddress;
+      default:
+        return TextInputType.text;
+    }
+  }
+
   Future<void> _submit() async {
-    if (!termsAccepted || !privacyAccepted || !whatsappConsent) {
-      setState(() {
-        error =
-            'Aceite os Termos, a Política de Privacidade e as mensagens transacionais no WhatsApp.';
-      });
-      return;
-    }
-    if (role == 'professional' && selectedCategories.isEmpty) {
-      setState(() => error = 'Selecione pelo menos uma função de interesse.');
-      return;
-    }
+    FocusScope.of(context).unfocus();
+    if (!_validateBeforeSubmit()) return;
 
     setState(() {
       loading = true;
@@ -147,6 +467,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
       final registrationId = (result['registration_id'] ?? '').toString();
       final phoneMasked = (result['phone_masked'] ?? phone.text).toString();
+      final developmentBypass = result['development_bypass'] == true;
+      final developmentCode =
+          (result['development_code'] ?? '000111').toString();
 
       final verifiedRole = await Navigator.of(context).push<String>(
         MaterialPageRoute(
@@ -154,6 +477,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
             api: widget.api,
             registrationId: registrationId,
             phoneMasked: phoneMasked,
+            developmentBypass: developmentBypass,
+            developmentCode: developmentCode,
           ),
         ),
       );
@@ -161,7 +486,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted || verifiedRole == null) return;
 
       if (verifiedRole == 'professional') {
-        Navigator.of(context).popUntil((route) => route.isFirst);
+        // Preserva a vaga escolhida durante o cadastro.
+        Navigator.of(context).pop();
         widget.onProfessionalRegistered();
       } else {
         await showDialog<void>(
@@ -182,7 +508,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         if (mounted) Navigator.of(context).pop();
       }
     } catch (e) {
-      if (mounted) setState(() => error = e.toString());
+      if (mounted) _validationError(e.toString());
     } finally {
       if (mounted) setState(() => loading = false);
     }
@@ -252,17 +578,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
     int? maxLength,
     VoidCallback? onTap,
     bool readOnly = false,
+    FocusNode? focusNode,
+    List<TextInputFormatter>? inputFormatters,
+    Widget? suffixIcon,
+    TextCapitalization textCapitalization = TextCapitalization.none,
   }) {
     return TextField(
       controller: controller,
+      focusNode: focusNode,
       keyboardType: keyboardType,
       obscureText: obscureText,
       maxLength: maxLength,
       readOnly: readOnly,
       onTap: onTap,
+      inputFormatters: inputFormatters,
+      textCapitalization: textCapitalization,
       decoration: InputDecoration(
         labelText: label,
         counterText: '',
+        suffixIcon: suffixIcon,
       ),
     );
   }
@@ -332,39 +666,56 @@ class _RegisterScreenState extends State<RegisterScreen> {
               _input(
                 name,
                 isProfessional
-                    ? 'Nome completo'
-                    : 'Nome completo do responsável',
+                    ? 'Nome completo *'
+                    : 'Nome completo do responsável *',
                 keyboardType: TextInputType.name,
+                focusNode: _focus['name'],
+                textCapitalization: TextCapitalization.words,
               ),
               const SizedBox(height: 12),
               _input(
                 phone,
-                'WhatsApp com DDD',
+                'WhatsApp com DDD *',
                 keyboardType: TextInputType.phone,
+                focusNode: _focus['phone'],
+                inputFormatters: const [
+                  _DigitsMaskFormatter('(##) #####-####', 11),
+                ],
               ),
               const SizedBox(height: 12),
               _input(
                 email,
-                'E-mail',
+                'E-mail *',
                 keyboardType: TextInputType.emailAddress,
+                focusNode: _focus['email'],
               ),
               const SizedBox(height: 12),
               if (isProfessional) ...[
-                _input(cpf, 'CPF', keyboardType: TextInputType.number),
+                _input(
+                  cpf,
+                  'CPF *',
+                  keyboardType: TextInputType.number,
+                  focusNode: _focus['cpf'],
+                  inputFormatters: const [
+                    _DigitsMaskFormatter('###.###.###-##', 11),
+                  ],
+                ),
+
                 const SizedBox(height: 12),
                 _input(
                   birthDate,
-                  'Data de nascimento',
+                  'Data de nascimento *',
                   keyboardType: TextInputType.datetime,
                   readOnly: true,
+                  focusNode: _focus['birthDate'],
                   onTap: _pickBirthDate,
                 ),
-                const SizedBox(height: 12),
-                _input(headline, 'Atividade principal'),
+
                 const SizedBox(height: 18),
-                const Text(
-                  'Funções de interesse',
-                  style: TextStyle(fontWeight: FontWeight.w800),
+                Text(
+                  'Funções de interesse *',
+                  key: _categoriesKey,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
                 if (categories.isEmpty)
@@ -399,88 +750,166 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ] else ...[
                 _input(
                   responsibleCpf,
-                  'CPF do responsável',
+                  'CPF do responsável *',
                   keyboardType: TextInputType.number,
+                  focusNode: _focus['responsibleCpf'],
+                  inputFormatters: const [
+                    _DigitsMaskFormatter('###.###.###-##', 11),
+                  ],
                 ),
                 const SizedBox(height: 12),
-                _input(cnpj, 'CNPJ', keyboardType: TextInputType.number),
+                _input(
+                  cnpj,
+                  'CNPJ *',
+                  keyboardType: TextInputType.number,
+                  focusNode: _focus['cnpj'],
+                  inputFormatters: const [
+                    _DigitsMaskFormatter('##.###.###/####-##', 14),
+                  ],
+                ),
                 const SizedBox(height: 12),
-                _input(legalName, 'Razão social'),
+                _input(
+                  legalName,
+                  'Razão social *',
+                  focusNode: _focus['legalName'],
+                  textCapitalization: TextCapitalization.words,
+                ),
                 const SizedBox(height: 12),
-                _input(tradeName, 'Nome fantasia'),
+                _input(
+                  tradeName,
+                  'Nome fantasia *',
+                  focusNode: _focus['tradeName'],
+                  textCapitalization: TextCapitalization.words,
+                ),
               ],
-              const SizedBox(height: 22),
-              const Text(
-                'Endereço',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 10),
-              _input(
-                postalCode,
-                'CEP',
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 12),
-              _input(address, 'Endereço'),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(child: _input(city, 'Cidade')),
-                  const SizedBox(width: 10),
-                  SizedBox(
-                    width: 90,
-                    child: _input(
-                      state,
-                      'UF',
-                      maxLength: 2,
-                      keyboardType: TextInputType.text,
+              if (isProfessional) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: const BoxDecoration(
+                    color: TpColors.blueSoft,
+                    borderRadius: BorderRadius.all(Radius.circular(12)),
+                  ),
+                  child: const Text(
+                    'Agora pedimos apenas o essencial. RG, endereço e dados Pix serão solicitados depois, quando forem necessários para confirmar um turno.',
+                    style: TextStyle(
+                      color: TpColors.text,
+                      fontSize: 10,
+                      height: 1.4,
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 22),
-              Text(
-                isProfessional
-                    ? 'Pix para receber pagamentos'
-                    : 'Pix para devoluções/reembolsos',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
                 ),
-              ),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                initialValue: pixType,
-                decoration: const InputDecoration(
-                  labelText: 'Tipo da chave Pix',
-                ),
-                items: const [
-                  DropdownMenuItem(value: 'cpf', child: Text('CPF')),
-                  DropdownMenuItem(value: 'cnpj', child: Text('CNPJ')),
-                  DropdownMenuItem(value: 'email', child: Text('E-mail')),
-                  DropdownMenuItem(value: 'phone', child: Text('Telefone')),
-                  DropdownMenuItem(
-                    value: 'random',
-                    child: Text('Chave aleatória'),
+              ] else ...[
+                const SizedBox(height: 22),
+                const Text(
+                  'Endereço',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
                   ),
-                ],
-                onChanged: (value) {
-                  if (value != null) setState(() => pixType = value);
-                },
-              ),
-              const SizedBox(height: 12),
-              _input(pixKey, 'Chave Pix'),
-              const SizedBox(height: 12),
-              _input(pixHolderName, 'Nome do titular da conta Pix'),
-              const SizedBox(height: 12),
-              _input(
-                pixHolderDocument,
-                'CPF/CNPJ do titular Pix',
-                keyboardType: TextInputType.number,
-              ),
+                ),
+                const SizedBox(height: 10),
+                _input(
+                  postalCode,
+                  'CEP *',
+                  keyboardType: TextInputType.number,
+                  focusNode: _focus['postalCode'],
+                  inputFormatters: const [
+                    _DigitsMaskFormatter('#####-###', 8),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _input(
+                  address,
+                  'Endereço *',
+                  focusNode: _focus['address'],
+                  textCapitalization: TextCapitalization.words,
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _input(
+                        city,
+                        'Cidade *',
+                        focusNode: _focus['city'],
+                        textCapitalization: TextCapitalization.words,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      width: 90,
+                      child: _input(
+                        state,
+                        'UF *',
+                        maxLength: 2,
+                        keyboardType: TextInputType.text,
+                        focusNode: _focus['state'],
+                        inputFormatters: const [_UpperCaseFormatter()],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                Text(
+                  isProfessional
+                      ? 'Pix para receber pagamentos'
+                      : 'Pix para devoluções/reembolsos',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: pixType,
+                  decoration: const InputDecoration(
+                    labelText: 'Tipo da chave Pix',
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'cpf', child: Text('CPF')),
+                    DropdownMenuItem(value: 'cnpj', child: Text('CNPJ')),
+                    DropdownMenuItem(value: 'email', child: Text('E-mail')),
+                    DropdownMenuItem(value: 'phone', child: Text('Telefone')),
+                    DropdownMenuItem(
+                      value: 'random',
+                      child: Text('Chave aleatória'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null && value != pixType) {
+                      setState(() {
+                        pixType = value;
+                        pixKey.clear();
+                      });
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+                _input(
+                  pixKey,
+                  'Chave Pix *',
+                  keyboardType: _pixKeyKeyboardType(),
+                  focusNode: _focus['pixKey'],
+                  inputFormatters: _pixKeyFormatters(),
+                ),
+                const SizedBox(height: 12),
+                _input(
+                  pixHolderName,
+                  'Nome do titular da conta Pix *',
+                  focusNode: _focus['pixHolderName'],
+                  textCapitalization: TextCapitalization.words,
+                ),
+                const SizedBox(height: 12),
+                _input(
+                  pixHolderDocument,
+                  'CPF/CNPJ do titular Pix *',
+                  keyboardType: TextInputType.number,
+                  focusNode: _focus['pixHolderDocument'],
+                  inputFormatters: const [_CpfCnpjFormatter()],
+                ),
+
+              ],
               const SizedBox(height: 22),
               const Text(
                 'Segurança da conta',
@@ -490,15 +919,45 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-              _input(password, 'Senha (mínimo 8 caracteres)', obscureText: true),
+              _input(
+                password,
+                'Senha (mínimo 8 caracteres) *',
+                obscureText: !passwordVisible,
+                focusNode: _focus['password'],
+                suffixIcon: IconButton(
+                  tooltip: passwordVisible ? 'Ocultar senha' : 'Mostrar senha',
+                  onPressed: () =>
+                      setState(() => passwordVisible = !passwordVisible),
+                  icon: Icon(
+                    passwordVisible
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                  ),
+                ),
+              ),
               const SizedBox(height: 12),
               _input(
                 passwordConfirm,
-                'Confirmar senha',
-                obscureText: true,
+                'Confirmar senha *',
+                obscureText: !passwordConfirmVisible,
+                focusNode: _focus['passwordConfirm'],
+                suffixIcon: IconButton(
+                  tooltip: passwordConfirmVisible
+                      ? 'Ocultar confirmação'
+                      : 'Mostrar confirmação',
+                  onPressed: () => setState(
+                    () => passwordConfirmVisible = !passwordConfirmVisible,
+                  ),
+                  icon: Icon(
+                    passwordConfirmVisible
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                  ),
+                ),
               ),
               const SizedBox(height: 18),
               CheckboxListTile(
+                key: _termsKey,
                 value: termsAccepted,
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
@@ -521,6 +980,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
               ),
               CheckboxListTile(
+                key: _privacyKey,
                 value: privacyAccepted,
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
@@ -543,6 +1003,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
               ),
               CheckboxListTile(
+                key: _whatsappKey,
                 value: whatsappConsent,
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
@@ -579,11 +1040,15 @@ class _VerifyRegistrationScreen extends StatefulWidget {
     required this.api,
     required this.registrationId,
     required this.phoneMasked,
+    required this.developmentBypass,
+    required this.developmentCode,
   });
 
   final ApiService api;
   final String registrationId;
   final String phoneMasked;
+  final bool developmentBypass;
+  final String developmentCode;
 
   @override
   State<_VerifyRegistrationScreen> createState() =>
@@ -632,7 +1097,15 @@ class _VerifyRegistrationScreenState
       await widget.api.resendRegistration(widget.registrationId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Novo código enviado por WhatsApp.')),
+        SnackBar(
+          content: Text(
+            widget.developmentBypass
+                ? 'Modo de desenvolvimento: use o código ' +
+                    widget.developmentCode +
+                    '. Nenhum WhatsApp foi enviado.'
+                : 'Novo código enviado por WhatsApp.',
+          ),
+        ),
       );
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
@@ -665,11 +1138,24 @@ class _VerifyRegistrationScreenState
             ),
             const SizedBox(height: 8),
             Text(
-              'Enviamos um código de 6 dígitos para ${widget.phoneMasked}.',
+              widget.developmentBypass
+                  ? 'Modo de desenvolvimento ativo. Nenhuma mensagem foi enviada para ' +
+                      widget.phoneMasked +
+                      '. Digite o código fixo ' +
+                      widget.developmentCode +
+                      ' para validar o fluxo.'
+                  : 'Enviamos um código de 6 dígitos para ' +
+                      widget.phoneMasked +
+                      '.',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: TpColors.muted,
+              style: TextStyle(
+                color: widget.developmentBypass
+                    ? const Color(0xFFA06B00)
+                    : TpColors.muted,
                 height: 1.4,
+                fontWeight: widget.developmentBypass
+                    ? FontWeight.w700
+                    : FontWeight.normal,
               ),
             ),
             const SizedBox(height: 24),
@@ -689,6 +1175,7 @@ class _VerifyRegistrationScreenState
             TextField(
               controller: code,
               keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               maxLength: 6,
               textAlign: TextAlign.center,
               style: const TextStyle(
@@ -714,6 +1201,82 @@ class _VerifyRegistrationScreenState
           ],
         ),
       ),
+    );
+  }
+}
+
+
+class _DigitsMaskFormatter extends TextInputFormatter {
+  const _DigitsMaskFormatter(this.mask, this.maxDigits);
+
+  final String mask;
+  final int maxDigits;
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    var digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    if (digits.length > maxDigits) digits = digits.substring(0, maxDigits);
+
+    final buffer = StringBuffer();
+    var digitIndex = 0;
+    for (var i = 0; i < mask.length && digitIndex < digits.length; i++) {
+      if (mask[i] == '#') {
+        buffer.write(digits[digitIndex++]);
+      } else {
+        buffer.write(mask[i]);
+      }
+    }
+
+    final formatted = buffer.toString();
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
+class _CpfCnpjFormatter extends TextInputFormatter {
+  const _CpfCnpjFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    var digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    if (digits.length > 14) digits = digits.substring(0, 14);
+
+    final formatter = digits.length <= 11
+        ? const _DigitsMaskFormatter('###.###.###-##', 11)
+        : const _DigitsMaskFormatter('##.###.###/####-##', 14);
+
+    return formatter.formatEditUpdate(
+      oldValue,
+      TextEditingValue(
+        text: digits,
+        selection: TextSelection.collapsed(offset: digits.length),
+      ),
+    );
+  }
+}
+
+class _UpperCaseFormatter extends TextInputFormatter {
+  const _UpperCaseFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final text = newValue.text
+        .toUpperCase()
+        .replaceAll(RegExp(r'[^A-Z]'), '');
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 }
