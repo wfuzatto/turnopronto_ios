@@ -89,6 +89,23 @@ class ApiService {
         .toList();
   }
 
+  Future<Map<String, dynamic>> appearance() async {
+    if (demoMode) {
+      return {
+        'web_skin': 'modern',
+        'app_skin': 'modern',
+        'ab_test': false,
+        'seasonal_campaign': false,
+        'different_per_platform': true,
+      };
+    }
+    final data = await _request('GET', '/appearance');
+    final raw = data['data'];
+    return raw is Map
+        ? Map<String, dynamic>.from(raw)
+        : <String, dynamic>{'app_skin': 'modern'};
+  }
+
   Future<Map<String, dynamic>> startRegistration(
     Map<String, dynamic> payload,
   ) async {
@@ -159,11 +176,13 @@ class ApiService {
       'headline': 'Garçom • Recepcionista',
       'city': 'São Paulo',
       'state': 'SP',
-      'reliability_score': 97,
-      'punctuality_score': 98,
-      'attendance_score': 98,
-      'rating': 4.9,
-      'completed_shifts': 42,
+      'reliability_score': 0,
+      'punctuality_score': 0,
+      'attendance_score': 0,
+      'rating': 0,
+      'completed_shifts': 0,
+      'company_feedback_count': 0,
+      'has_company_feedback': false,
       'status': 'verified',
     };
   }
@@ -200,18 +219,104 @@ class ApiService {
     };
   }
 
+  Future<Map<String, dynamic>> onboarding() async {
+    if (demoMode) {
+      return {
+        'application_ready': false,
+        'can_apply': false,
+        'payment_complete': false,
+        'profile': currentProfile ?? <String, dynamic>{},
+      };
+    }
+    final data = await _request('GET', '/onboarding');
+    return Map<String, dynamic>.from(data['data'] as Map);
+  }
+
+  Future<Map<String, dynamic>> completePayment(
+    Map<String, dynamic> payload,
+  ) async {
+    if (demoMode) {
+      return {
+        'application_ready': true,
+        'can_apply': true,
+        'payment_complete': true,
+        'profile': currentProfile ?? <String, dynamic>{},
+      };
+    }
+    final data = await _request(
+      'POST',
+      '/onboarding/payment',
+      body: payload,
+    );
+    final result = Map<String, dynamic>.from(data['data'] as Map);
+    await me();
+    return result;
+  }
+
+  Future<Map<String, dynamic>> home() async {
+    if (demoMode) {
+      return {
+        'profile': currentProfile ?? <String, dynamic>{},
+        'kpis': {
+          'week': 0,
+          'earnings': 0.0,
+          'next_payout': 0.0,
+          'company_feedback_count': 0,
+          'reliability': null,
+          'punctuality': null,
+          'attendance': null,
+          'rating': null,
+        },
+        'opportunities': demoJobs().map((job) => {
+          'id': job.id,
+          'category_name': job.role,
+          'company_name': job.company,
+          'starts_at': job.startsAt.toIso8601String(),
+          'ends_at': job.endsAt.toIso8601String(),
+          'shift_value': job.value,
+          'address': job.address,
+          'city': job.city,
+          'state': job.state,
+          'latitude': job.latitude,
+          'longitude': job.longitude,
+          'acceptance_mode': job.acceptanceMode,
+          'required_workers': job.requiredWorkers,
+        }).toList(),
+      };
+    }
+    final data = await _request('GET', '/home');
+    return Map<String, dynamic>.from(data['data'] as Map);
+  }
+
   Future<List<Job>> opportunities() async {
     if (demoMode) return demoJobs();
-    final data = await _request('GET', '/opportunities');
-    final list = data['data'];
-    if (list is! List) return <Job>[];
-    return list
-        .map(
-          (e) => Job.fromJson(
-            Map<String, dynamic>.from(e as Map),
-          ),
-        )
-        .toList();
+    // A vitrine pública é a fonte das vagas disponíveis para visitantes e
+    // usuários autenticados. A rota privada pode aplicar filtros adicionais
+    // e nunca deve fazer as oportunidades públicas desaparecerem após login.
+    final publicData = await _request('GET', '/public/opportunities');
+    final publicList = publicData['data'];
+    final publicJobs = publicList is List
+        ? publicList.map((e) => Job.fromJson(Map<String, dynamic>.from(e as Map))).toList()
+        : <Job>[];
+    if (!authenticated) return publicJobs;
+
+    // A resposta autenticada fornece o estado individual de acompanhamento.
+    // Erros ou lista vazia não comprometem a vitrine pública.
+    try {
+      final privateData = await _request('GET', '/opportunities');
+      final privateList = privateData['data'];
+      if (privateList is! List) return publicJobs;
+      final privateJobs = privateList
+          .map((e) => Job.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      final byId = {for (final job in privateJobs) job.id: job};
+      return [
+        for (final job in publicJobs)
+          job.copyWith(following: byId[job.id]?.following ?? job.following),
+      ];
+    } catch (_) {
+      return publicJobs;
+    }
   }
 
   Future<Job> job(int id) async {
@@ -221,7 +326,7 @@ class ApiService {
         orElse: () => demoJobs().first,
       );
     }
-    final data = await _request('GET', '/shifts/' + id.toString());
+    final data = await _request('GET', (authenticated ? '/shifts/' : '/public/shifts/') + id.toString());
     return Job.fromJson(
       Map<String, dynamic>.from(data['data'] as Map),
     );
@@ -250,6 +355,24 @@ class ApiService {
           .toString(),
       assignmentId: assignmentId,
     );
+  }
+
+  Future<bool> followShift(int id) async {
+    if (demoMode) return true;
+    final data = await _request(
+      'POST',
+      '/shifts/' + id.toString() + '/follow',
+    );
+    return data['following'] == true;
+  }
+
+  Future<bool> unfollowShift(int id) async {
+    if (demoMode) return false;
+    final data = await _request(
+      'POST',
+      '/shifts/' + id.toString() + '/unfollow',
+    );
+    return data['following'] == true;
   }
 
   Future<List<Assignment>> assignments() async {
@@ -306,15 +429,11 @@ class ApiService {
     if (demoMode) {
       return {
         'summary': {
-          'total': 6420.0,
-          'available': 780.0,
+          'total': 0.0,
+          'available': 0.0,
+          'next_payout': 0.0,
         },
-        'months': [
-          {'month': '2026-06', 'amount': 980.0},
-          {'month': '2026-07', 'amount': 1250.0},
-          {'month': '2026-08', 'amount': 1850.0},
-          {'month': '2026-09', 'amount': 2340.0},
-        ],
+        'months': <Map<String, dynamic>>[],
       };
     }
     final data = await _request('GET', '/earnings');
@@ -324,18 +443,12 @@ class ApiService {
   Future<Map<String, dynamic>> reputation() async {
     if (demoMode) {
       return {
-        'profile': currentProfile ?? <String, dynamic>{},
-        'events': [
-          {
-            'id': 1,
-            'description': 'Turno concluído com pontualidade.',
-            'points_delta': 1,
-            'severity': 'positive',
-            'occurred_at': DateTime.now()
-                .subtract(const Duration(days: 7))
-                .toIso8601String(),
-          },
-        ],
+        'profile': {
+          ...?currentProfile,
+          'company_feedback_count': 0,
+          'has_company_feedback': false,
+        },
+        'events': <Map<String, dynamic>>[],
       };
     }
     final data = await _request('GET', '/reputation');
@@ -389,7 +502,8 @@ class ApiService {
         state: 'SP',
         dressCode: 'Calça preta, camisa branca e sapato social preto.',
         notes: 'Evento corporativo. Compareça com documento.',
-        distanceKm: 2.1,
+        latitude: -23.5928,
+        longitude: -46.6887,
         acceptanceMode: 'automatic',
         requiredWorkers: 3,
       ),
@@ -407,7 +521,8 @@ class ApiService {
         notes: 'Recepção e orientação de convidados.',
         companyRating: 4.8,
         candidates: 5,
-        distanceKm: 3.4,
+        latitude: -23.5615,
+        longitude: -46.6559,
         acceptanceMode: 'manual',
         requiredWorkers: 2,
       ),
@@ -425,7 +540,8 @@ class ApiService {
         notes: 'Apoio de preparação e organização.',
         companyRating: 4.7,
         candidates: 2,
-        distanceKm: 1.8,
+        latitude: -23.5505,
+        longitude: -46.6333,
       ),
     ];
   }
