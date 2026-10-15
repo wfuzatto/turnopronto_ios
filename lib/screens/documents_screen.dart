@@ -50,7 +50,7 @@ class DocumentsScreen extends StatelessWidget {
                     SizedBox(width: 9),
                     Expanded(
                       child: Text(
-                        'Documento de identidade e CPF precisam estar verificados antes do primeiro turno. Neste app iOS de teste, novos uploads continuam sendo feitos pelo portal web.',
+                        'Documento de identidade e CPF precisam estar verificados antes do primeiro turno. Neste APK de teste, novos uploads continuam sendo feitos pelo portal web.',
                         style: TextStyle(
                           fontSize: 10,
                           color: TpColors.text,
