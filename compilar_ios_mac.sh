@@ -38,6 +38,23 @@ if [[ ! -f ios/Runner.xcodeproj/project.pbxproj ]]; then
 fi
 flutter pub get
 
+# iOS location permission required by the Android-equivalent geolocation feature.
+if [[ -f ios/Runner/Info.plist ]]; then
+  /usr/bin/python3 - <<'PY'
+import plistlib
+from pathlib import Path
+path = Path("ios/Runner/Info.plist")
+with path.open("rb") as stream:
+    plist = plistlib.load(stream)
+plist["NSLocationWhenInUseUsageDescription"] = (
+    "O TurnoPronto utiliza sua localização, com sua permissão, "
+    "para mostrar vagas próximas e calcular a distância até o trabalho."
+)
+with path.open("wb") as stream:
+    plistlib.dump(plist, stream, fmt=plistlib.FMT_XML, sort_keys=False)
+PY
+fi
+
 if [[ -f ios/Podfile ]]; then
   if ! command -v pod >/dev/null 2>&1; then
     echo "CocoaPods ausente. Instale-o antes de compilar se o projeto exigir pods." >&2
